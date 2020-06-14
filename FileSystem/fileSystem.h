@@ -36,22 +36,24 @@ bool logout = false;
 struct inode* userinode;
 int userpos;
 
-//更新inode，磁盘
+//更新inode，磁盘 ,done
 int syncinode(struct inode* inode)
 {
+	//in: 索引节点地址
+	//out：
 	int ino;
 	int ret;
-	int ipos;
-	ipos = BOOTPOS + SUPERSIZE + inode->inodeID * sizeof(struct finode);
+	int ipos = BOOTPOS + SUPERSIZE + inode->inodeID * sizeof(struct finode);//节点位置计算
 	fseek(virtualDisk, ipos, SEEK_SET);
 	ret = fwrite(&inode->finode, sizeof(struct finode), 1, virtualDisk);
-	fflush(virtualDisk);
-	if (ret != 1)
+	fflush(virtualDisk);//去除无用信息
+	if (ret != 1)//成功写入
 		return ERROR_SYSINODE_FAIL;
 	return ERROR_OK;
 }
+
 //初始化，磁盘
-int initialize(char* path)
+/*int initialize(char* path)
 {
 	virtualDisk = fopen(path, "r+");
 	if (virtualDisk == NULL)
@@ -76,15 +78,11 @@ int initialize(char* path)
 	super->freeBlockNum = BLOCKSNUM;
 	super->freeBlockNum = BLOCKSNUM;
 
-	/*for(int i=0;i<BLOCKNUM;i++)
-	cout<<super->freeBlock[i]<<endl;
-	cout<<super->nextFreeBlock;
-	getchar();*/
 	return ERROR_OK;
-}
+}*/
 
 //format the virtual disk
-int formatting(char * path)
+/*int formatting(char * path)
 {
 	virtualDisk = fopen(path, "r+");
 	if (virtualDisk == NULL)
@@ -107,20 +105,21 @@ int formatting(char * path)
 		fwrite(group, sizeof(unsigned int), BLOCKNUM, virtualDisk);
 	}
 	return ERROR_OK;
-}
-//save the super into the virtual disk
+}*/
+
+//更新超级块信息到磁盘,done
 int synchronization()
 {
 	if (virtualDisk == NULL)
 		return ERROR_VM_NOEXIST;
 	fseek(virtualDisk, BOOTPOS, SEEK_SET);
-	int writeSize = fwrite(super, sizeof(struct supblock), 1, virtualDisk);
+	int writeIn = fwrite(super, sizeof(struct supblock), 1, virtualDisk);
 	fflush(virtualDisk);
-	if (writeSize != 1)
+	if (writeIn != 1)
 		return ERROR_SYSSUP_FAIL;
 	return ERROR_OK;
-}
-//加载超级块，磁盘
+} 
+//加载超级块，磁盘，done
 int loadSuper(char *path)
 {
 	virtualDisk = fopen(path, "r+");
@@ -128,14 +127,15 @@ int loadSuper(char *path)
 	{
 		return ERROR_VM_NOEXIST;
 	}
-	super = (struct supblock*)calloc(1, sizeof(struct supblock));				//distribute space in the memory
-	fseek(virtualDisk, BOOTPOS, SEEK_SET);								//the superblock is the #1	block
+	super = (struct supblock*)calloc(1, sizeof(struct supblock));//内存分配空间
+	fseek(virtualDisk, BOOTPOS, SEEK_SET);//跳转位置，the superblock is the #1	block
 	int readSize = fread(super, sizeof(struct supblock), 1, virtualDisk);
 	if (readSize != sizeof(struct supblock))
 		return ERROR_LOADSUP_FAIL;
 	return ERROR_OK;
 }
-//get inodeid为ino的inode，磁盘，内存
+
+//get inodeid为ino的inode，内存
 struct inode * iget(int ino)
 {
 	int ipos = 0;
@@ -168,12 +168,6 @@ struct inode * iget(int ino)
 	return &usedinode[ino];
 }
 
-/*void iput(struct inode *inode)
-{
-	if (inode->userCount>0)
-		inode->userCount--;
-}*/
-
 //内存
 struct inode* ialloc()
 {
@@ -203,11 +197,12 @@ struct inode* ialloc()
 	synchronization();
 	return iget(super->freeInode[super->nextFreeInode]);
 }
-//从空闲块栈中取出一空闲块
+
+//创建新块，磁盘，done
 int balloc()
 {
 	unsigned int bno;
-	if (super->freeBlockNum <= 0)
+	if (super->freeBlockNum <= 0) //无空闲空间
 		return ERROR_BLOCK_EMPTY;
 	if (super->nextFreeBlock == 1)//若栈只剩一个空闲盘块，那么采用成组链接法
 	{
@@ -222,6 +217,7 @@ int balloc()
 	synchronization();
 	return super->freeBlock[super->nextFreeBlock];
 }
+
 //时间获取
 void getTime(long int timeStamp)
 {
@@ -233,7 +229,8 @@ void getTime(long int timeStamp)
 	strftime(s, 80, "%Y-%m-%d %H:%M:%S", p);
 	printf("%s", s);
 }
-//将指定数据的内容写入到指定的盘块中，磁盘
+
+//写入盘块，磁盘，done
 int bwrite(void * _Buf, unsigned short int bno, long int offset, int size, int count = 1)
 {
 	long int pos;
@@ -246,7 +243,8 @@ int bwrite(void * _Buf, unsigned short int bno, long int offset, int size, int c
 		return ERROR_BWRITE_FAIL;
 	return ERROR_OK;
 }
-//将指定的盘块号内容的读取到对应的数据结构中
+
+//读取盘块，磁盘，done
 int bread(void * _Buf, unsigned short int bno, int offset, int size, int count = 1)
 {
 	long int pos;
@@ -258,10 +256,11 @@ int bread(void * _Buf, unsigned short int bno, int offset, int size, int count =
 		return ERROR_BREAD_FAIL;
 	return ERROR_OK;
 }
-//磁盘删除，磁盘
+
+//删除盘块，磁盘，done
 int bfree(int bno)
 {
-	if (super->nextFreeBlock == 20)
+	if (super->nextFreeBlock == 20) //复制空闲块管理索引表，转移表
 	{
 		bwrite(&super->freeBlock, bno, 0, sizeof(unsigned int), 20);
 		super->nextFreeBlock = 1;
@@ -276,6 +275,7 @@ int bfree(int bno)
 	synchronization();
 	return 1;
 }
+
 //显示文件权限信息，文件
 void getMode(int mode)
 {
@@ -436,10 +436,7 @@ int subStr(char* src, char*dst, int start, int end = -1)
 	dst[pos] = 0;
 	return 1;
 }
-/*int _cd(char* dir, inode* inode)
-{
-	return 0;
-}*/
+
 //改变当前位置，内存
 inode* cd(char* path, inode* inode)
 {
