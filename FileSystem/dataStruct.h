@@ -33,8 +33,8 @@ struct finode
 //node structure in the memory内存索引结点
 struct inode
 {
-	struct					finode finode;//磁盘索引结点结构，保存从磁盘读出的索引结点信息
-	struct					inode *parent;//父级内存索引结点指针
+	struct finode finode;//磁盘索引结点结构，保存从磁盘读出的索引结点信息
+	struct inode *parent;//父级内存索引结点指针
 	unsigned short int		inodeID;				//the node id
 	int						userCount;			//the number of process using the inode
 };
