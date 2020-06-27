@@ -26,10 +26,15 @@ struct supblock *super;
 FILE * virtualDisk;
 //当前用户
 struct user* curuser;
+//登陆账户根节点
+int logindir;
 //当前文件或者目录名字（通过文件，获取名字和文件的inode id）
 struct direct curdirect;
 //当前目录
 struct dir* curdir;
+//上一层目录名字
+char abovedirname[5][20];
+int abovenum = 0;
 //退出
 bool logout = false;
 //用户文件节点
@@ -41,7 +46,7 @@ int syncinode(struct inode* inode)
 {
 	//in: 索引节点地址
 	//out：
-	int ino;
+	//int ino;
 	int ret;
 	int ipos = BOOTPOS + SUPERSIZE + inode->inodeID * sizeof(struct finode);//节点位置计算
 	fseek(virtualDisk, ipos, SEEK_SET);
@@ -52,63 +57,8 @@ int syncinode(struct inode* inode)
 	return ERROR_OK;
 }
 
-//初始化，磁盘
-/*int initialize(char* path)
-{
-	virtualDisk = fopen(path, "r+");
-	if (virtualDisk == NULL)
-	{
-		return ERROR_VM_NOEXIST;
-	}
-	super = (struct supblock*)calloc(1, sizeof(struct supblock));				//distribute space in the memory
-	fseek(virtualDisk, BOOTPOS, SEEK_SET);								//the superblock is the #1	block
-	fread(super, sizeof(struct supblock), 1, virtualDisk);
-
-	fseek(virtualDisk, BLOCKSTART * 1024, SEEK_SET);
-	//fread(super->freeBlock,sizeof(unsigned int),BLOCKNUM,virtualDisk);
-	for (int i = 0; i<20; i++)
-		super->freeBlock[i] = 912 + i;
-	super->nextFreeBlock = BLOCKNUM;
-	super->size = 8 * 1024 * 1024;
-	super->nextFreeInode = INODENUM;
-	for (int i = 0; i<INODENUM; i++)
-	{
-		super->freeInode[i] = i;
-	}
-	super->freeBlockNum = BLOCKSNUM;
-	super->freeBlockNum = BLOCKSNUM;
-
-	return ERROR_OK;
-}*/
-
-//format the virtual disk
-/*int formatting(char * path)
-{
-	virtualDisk = fopen(path, "r+");
-	if (virtualDisk == NULL)
-	{
-		return ERROR_VM_NOEXIST;
-	}
-	fseek(virtualDisk, BLOCKSTART * 1024, SEEK_SET);
-	unsigned int group[BLOCKNUM];
-	for (int i = 0; i<BLOCKNUM; i++)
-	{
-		group[i] = i + 912;
-	}
-	for (int i = 0; i<363; i++)
-	{
-		for (int j = 0; j<BLOCKNUM; j++)
-		{
-			group[j] += BLOCKNUM;
-		}
-		fseek(virtualDisk, (BLOCKSTART + i * 20) * 1024, SEEK_SET);			//cout<<BLOCKSTART+i*20;
-		fwrite(group, sizeof(unsigned int), BLOCKNUM, virtualDisk);
-	}
-	return ERROR_OK;
-}*/
-
 //更新超级块信息到磁盘,done
-int synchronization()
+int Syncsuperblock()
 {
 	if (virtualDisk == NULL)
 		return ERROR_VM_NOEXIST;
@@ -147,9 +97,11 @@ struct inode * iget(int ino)
 	}
 	if (virtualDisk == NULL)
 		return NULL;
-	ipos = BOOTPOS + SUPERSIZE + ino*INODE;
+	//ipos = BOOTPOS + SUPERSIZE + ino*INODE;
+	ipos = BOOTPOS + SUPERSIZE + ino * sizeof(struct finode);
 	fseek(virtualDisk, ipos, SEEK_SET);//跳转
 	ret = fread(&usedinode[ino], sizeof(struct finode), 1, virtualDisk);
+	//ret = fread(&usedinode[ino], sizeof(struct inode), 1, virtualDisk);
 	if (ret != 1)
 		return NULL;
 	if (usedinode[ino].finode.fileLink == 0)		//it is s new file
@@ -194,7 +146,7 @@ struct inode* ialloc()
 	if (super->nextFreeInode == 0)
 		return NULL;
 	super->nextFreeInode--;
-	synchronization();
+	Syncsuperblock();
 	return iget(super->freeInode[super->nextFreeInode]);
 }
 
@@ -214,7 +166,7 @@ int balloc()
 	}
 	super->freeBlockNum--;
 	super->nextFreeBlock--;
-	synchronization();
+	Syncsuperblock();
 	return super->freeBlock[super->nextFreeBlock];
 }
 
@@ -272,7 +224,7 @@ int bfree(int bno)
 		super->nextFreeBlock++;
 	}
 	super->freeBlockNum++;
-	synchronization();
+	Syncsuperblock();
 	return 1;
 }
 
@@ -281,15 +233,15 @@ void getMode(int mode)
 {
 	int type = mode / 1000;
 	int auth = mode % 1000;
-	if (type == 1)
-		cout << "d";
-	else
-		cout << "-";
+	(type == 1)?  cout << "d" :  cout << "-";
 	int div = 100;
+	int a[3];
 	for (int i = 0; i<3; i++){
+		a[0] = 0;
+		a[1] = 0;
+		a[2] = 0;
 		int num = auth / div;
-		auth = auth%div;
-		int a[3] = { 0 };
+		auth = auth % div;
 		int time = 2;
 		while (num != 0)
 		{
@@ -335,7 +287,7 @@ void info(inode* inode)
 //显示超级块信息
 void superInfo()
 {
-	cout << "size" << super->size << endl;
+	cout << "size: " << super->size << endl;
 	cout << "freeBlock:" << endl;
 	for (int i = 0; i<super->nextFreeBlock; i++)
 		cout << super->freeBlock[i] << " ";
@@ -343,7 +295,7 @@ void superInfo()
 	cout << "freeInode:" << endl;
 	for (int i = 0; i<super->nextFreeInode; i++)
 		cout << super->freeInode[i] << " ";
-	cout << "nextFreeInode:" << super->nextFreeInode << endl;
+	cout <<endl<< "nextFreeInode:" << super->nextFreeInode << endl;
 	cout << "nextFreeBlock:" << super->nextFreeBlock << endl;
 	cout << "freeBlockNum:" << super->freeBlockNum << endl;
 	cout << "freeInodeNum:" << super->freeInodeNum << endl;
@@ -352,16 +304,13 @@ void superInfo()
 int login()
 {
 	char ch;
-	struct dir* dir = (struct dir*)calloc(1, sizeof(struct dir));
-	bread(dir, root->finode.addr[0], 0, sizeof(struct dir));
-	userinode = iget(dir->direct[0].inodeID);
+	userinode = iget(0);
 	int usernum = userinode->finode.fileSize / sizeof(user);
 	struct user* users = (struct user*)calloc(usernum, sizeof(struct user));
 	bread(users, userinode->finode.addr[0], 0, sizeof(struct user), usernum);
 	char user[MAXNAME] = { 0 }, pwd[MAXPWD] = { 0 };
 	cout << "username:";
 	cin >> user;
-	/*gets(user);*/
 	for (int i = 0; i<usernum; i++)
 	{
 		if (strcmp(users[i].userName, user) == 0)
@@ -388,7 +337,7 @@ int login()
 				getTime(super->lastLogin);
 				cout << endl;
 				super->lastLogin = timer + 8 * 60 * 60;
-				synchronization();
+				Syncsuperblock();
 				return true;
 			}
 			else
@@ -464,6 +413,7 @@ inode* cd(char* path, inode* inode)
 				if (strcmp(dir->direct[i].directName, tmp) == 0)
 				{
 					count = -1;
+					strcpy(abovedirname[abovenum++],curdirect.directName);
 					curdirect = dir->direct[i];
 					struct inode * tmpnode = iget(dir->direct[i].inodeID);
 					tmpnode->parent = inode;
@@ -537,13 +487,33 @@ int ll()
 			cout << " ";
 			cout.write(inode->finode.group, strlen(inode->finode.group));
 			cout << " ";
-			getTime(inode->finode.createTime);
-			cout << " ";
 			puts(dir->direct[i].directName);
 		}
 	}
 	return 1;
 
+}
+//查找普通用户的根节点
+inode* namespaceroot(string username)
+{
+	int type = root->finode.mode / 1000;
+	int count = root->finode.fileSize / sizeof(struct direct);
+	dir* dir = (struct dir*)calloc(1, sizeof(struct dir));
+	int addrnum = count / 63 + (count % 63 >= 1 ? 1 : 0);
+	addrnum > 4 ? addrnum = 4 : NULL;
+	for (int addr = 0; addr < addrnum; addr++)
+	{
+		bread(dir, current->finode.addr[addr], 0, sizeof(struct dir));
+		for (int i = 0; i < dir->dirNum; i++)
+		{
+			inode* inode = iget(dir->direct[i].inodeID);
+			string name = dir->direct[i].directName;
+			if (name == username)
+			{
+				return inode;
+			}
+		}
+	}
 }
 //新建目录，文件
 int mkdir(char * dirname)
@@ -554,7 +524,7 @@ int mkdir(char * dirname)
 		return -1;
 	}
 	int count = current->finode.fileSize / sizeof(struct direct);
-	if (count>252)
+	if (count>252)//63*4=252
 	{
 		cout << "can not make more dir in the current dir!" << endl;
 		return -1;
@@ -590,7 +560,7 @@ int mkdir(char * dirname)
 	return 1;
 }
 
-//cd,文件（可选）
+//返回上一层目录，文件
 void cd__()
 {
 	int inodeid = current->inodeID;
@@ -607,13 +577,24 @@ void cd__()
 			if (dir->direct[i].inodeID == inodeid)
 			{
 				count = -1;
-				curdirect = dir->direct[i];
+				if (inode->inodeID == logindir) {
+                      strcpy(curdirect.directName," ");
+					  curdirect.inodeID = logindir;
+				}
+				else
+				{
+                      curdirect = dir->direct[i];
+					  strcpy(curdirect.directName, abovedirname[--abovenum]);
+				}
+				      
+
+				current = inode;
 				break;
 			}
 		}
 	}
 }
-//密码验证，用户
+//密码修改，用户
 void passwd()
 {
 	char ch;
@@ -692,6 +673,11 @@ int chmod(char * para)
 			if (strcmp(dir->direct[i].directName, dirname) == 0)
 			{
 				inode* tmp = iget(dir->direct[i].inodeID);
+				if (logindir!=1 && strcmp(tmp->finode.owner, "root") == 0)
+				{
+					cout << "privilege error" << endl;
+					return -1;
+				}
 				tmp->finode.mode = (tmp->finode.mode / 1000) * 1000 + mode;
 				syncinode(tmp);
 				//info(tmp);
@@ -807,7 +793,7 @@ int touch(char * filename)
 	strcpy(dir->direct[dir->dirNum].directName, filename);
 	struct inode * tmpinode = ialloc();
 	tmpinode->finode.addr[0] = balloc();
-	tmpinode->finode.mode = 2774;
+	tmpinode->finode.mode = (int)774;
 	strcpy(tmpinode->finode.owner, curuser->userName);
 	strcpy(tmpinode->finode.group, curuser->userGroup);
 	syncinode(tmpinode);
@@ -825,9 +811,6 @@ int append(char * src)
 	int inodeid = -1;
 	subStr(src, filename, 0, pos);
 	subStr(src, content, pos + 1);
-	/*puts(filename);
-	puts(content);
-	cout<<strlen(content)<<endl;*/
 	int count = current->finode.fileSize / sizeof(struct direct);
 	dir * dir = (struct dir*)calloc(1, sizeof(struct dir));
 	int addrnum = count / 63 + (count % 63 >= 1 ? 1 : 0);
@@ -855,6 +838,24 @@ int append(char * src)
 		return -1;
 	}
 	struct inode * inode = iget(inodeid);
+	int mode = inode->finode.mode;
+	if (logindir == 1)
+	{
+		if (mode / 100 <= 5)//只读
+		{
+			cout << "privilege error"<<endl;
+			return -1;
+		}
+	}
+	else
+	{
+		mode = mode % 100;
+		if (mode / 10 <= 5)
+		{
+			cout << "privilege error" << endl;
+			return -1;
+		}
+	}
 	int fileSize = inode->finode.fileSize;
 	int index = 0;
 	int addr = fileSize / 1024;
@@ -922,7 +923,7 @@ int cat(char * filename)
 	cout << endl;
 	return 1;
 }
-//文件目录删除，文件
+//文件目录递归删除，文件
 int _rmdir(struct inode* inode)
 {
 	struct inode * rminode = NULL;
@@ -986,7 +987,7 @@ int rmdir(struct inode* inode, char* filename)
 		bfree(rminode->finode.addr[i]);
 	rminode->finode.fileLink = 0;
 	super->freeInodeNum++;
-	synchronization();
+	Syncsuperblock();
 	syncinode(rminode);
 	return 1;
 }
@@ -1155,6 +1156,25 @@ int cp(char * src)
 	return 1;
 }
 
+void createuser()
+{
+	user* rootuser = new user;
+	char name, password, group;
+	cout << "Please enter username:" << endl;
+	cin >> rootuser->userName;
+	cout << "Please enter password:" << endl;
+	cin >> rootuser->userPwd;
+	cout << "Please enter the groupname of the user:" << endl;
+	cin >> rootuser->userGroup;
+	inode* usernode = iget(0);
+	int usernum = usernode->finode.fileSize / sizeof(user);
+	usernode->finode.fileSize += sizeof(struct user);
+	fseek(virtualDisk, 931*BLOCKSIZE + usernum * sizeof(struct user), SEEK_SET);//跳转到931块
+	fwrite(rootuser, sizeof(struct user), 1, virtualDisk);
+	syncinode(usernode);
+	mkdir(rootuser->userName); //建立用户的目录
+}
+
 //命令识别，内存
 int dispatcher()
 {
@@ -1207,8 +1227,8 @@ int dispatcher()
 		if (current->parent != NULL)
 		{
 			inode* tmp = current->parent;
-			current = tmp;
-			if (current->inodeID != 0)
+			//current = tmp;
+			if (tmp->inodeID != 0)
 				cd__();
 		}
 	}
@@ -1273,20 +1293,20 @@ int dispatcher()
 	{
 			cout << " 1．Chgrp	改变文件所属组：" << endl;
 			cout << "	1)	命令格式：" << endl;
-			cout << "	chgrp[组][文件]" << endl;
+			cout << "	chgrp[文件][组]" << endl;
 			cout << "	2)	命令功能：" << endl;
 			cout << "	chgrp命令可采用群组名称或群组识别码的方式改变文件或目录的所属群组。使用权限是超级用户。" << endl;
 			cout << "	3)	命令参数：" << endl;
-			cout << "	[组]：用户组名称" << endl;
 			cout << "	[文件]：文件名称" << endl;
+			cout << "	[组]：用户组名称" << endl;
 			cout << "2．Chown	改变文件拥有者：" << endl;
 			cout << "	1)	命令格式：" << endl;
-			cout << "	chown[用户名][文件]" << endl;
+			cout << "	chown[文件][用户名]" << endl;
 			cout << "	2)	命令功能：" << endl;
 			cout << "	通过chown改变文件的拥有者。" << endl;
 			cout << "	3)	命令参数：" << endl;
-			cout << "	[用户名]：要更改的新的用户名" << endl;
 			cout << "	[文件]：要修改的文件名" << endl;
+			cout << "	[用户名]：要更改的新的用户名" << endl;
 			cout << "3．Chmod	改变文件权限：" << endl;
 			cout << "	1)	命令格式：" << endl;
 			cout << "	chmod[mode][文件名]" << endl;
@@ -1332,17 +1352,114 @@ int dispatcher()
 			cout << "	mv 文件 新文件名" << endl;
 			cout << "	2）命令功能：" << endl;
 			cout << "	改指令用于修改目录中已经存在文件名。" << endl;
-
-
-
-			
 	}
 	else if (strcmp(command, "pwd") == 0)
 		pwd();
+	else if (strcmp(command, "creat") == 0)
+	    createuser();
 	else if (strcmp(command, "info") == 0)
 		superInfo();
 	else if (strcmp(command, "exit") == 0)
 		logout = true;
 	//strCpy(command,shell,strlen(command)+1);
 	return 1;
+}
+
+//初始化磁盘
+bool format()
+{
+	FILE* fd = fopen("disk", "wb+");
+	if (fd == NULL)
+	{
+		printf("初始化文件系统失败!\n");
+		return false;
+	}
+	//大小为 8 MB
+	int buffer[1024] = { 0 };
+	for (int i = 0; i < 8*1024; i++) {
+		fwrite(buffer,1024, 1, fd);
+	}
+	//初始化超级块
+	supblock superblock;
+	superblock.size = 8 * 1024 * 1024;
+	for (int i = 0; i < 20; i++)
+		superblock.freeBlock[i] = 912 + i;
+	superblock.nextFreeBlock = BLOCKNUM - 2;
+	superblock.freeBlockNum = BLOCKSNUM - 2;
+	for (int i = 0; i < INODENUM; i++)
+	{
+		superblock.freeInode[i] = i;
+	}
+	superblock.freeInodeNum = BLOCKSNUM - 2;
+	superblock.nextFreeInode = INODENUM - 2;
+	superblock.lastLogin = 0;
+	fseek(fd, BOOTPOS, SEEK_SET);
+	fwrite(&superblock, sizeof(struct supblock), 1, fd);
+
+	//初始化用户root
+	user *rootuser=new user;
+	strcpy(rootuser->userName,"root");
+	strcpy(rootuser->userPwd, "root");
+	strcpy(rootuser->userGroup, "admin");
+	fseek(fd, 931*BLOCKSIZE, SEEK_SET);//跳转到913块
+	fwrite(rootuser, sizeof(struct user), 1, fd);
+
+	//初始化用户节点
+	inode *usernode = new inode;
+	usernode->finode.fileLink++;
+	usernode->finode.fileSize = sizeof(struct user);
+	usernode->inodeID = 0;
+	usernode->finode.mode = (int)774;
+	usernode->finode.addr[0] = 931;
+	strcpy(usernode->finode.owner, "root");
+	strcpy(usernode->finode.group, "admin");
+	time_t timer;
+	time(&timer);
+	usernode->finode.createTime = timer;
+	//syncinode(usernode);
+	int ipos = BOOTPOS + SUPERSIZE + usernode->inodeID * sizeof(struct finode);//节点位置计算
+	fseek(fd, ipos, SEEK_SET);
+	fwrite(&usernode->finode, sizeof(struct finode), 1, fd);
+	fflush(fd);//去除无用信息
+
+	//创建根目录
+	dir *home=new dir;
+	home->dirNum = 1;
+	strcpy(home->direct[0].directName,"userstore");
+	home->direct[0].inodeID = 931;
+	fseek(fd, 930*BLOCKSIZE, SEEK_SET);//跳转
+	fwrite(home, sizeof(struct dir), 1, fd);
+	fflush(fd);//去除无用信息
+	inode *anode=new inode;
+	anode->finode.fileLink++;
+	anode->inodeID = 1;
+	anode->finode.mode = 1774;
+	anode->finode.addr[0] = 930;
+	strcpy(anode->finode.owner, "root");
+	strcpy(anode->finode.group, "admin");
+	anode->finode.fileSize = sizeof(struct direct);
+	timer = time(NULL);
+	anode->finode.createTime = (long int)timer;
+	//syncinode(anode);
+	ipos = BOOTPOS + SUPERSIZE + anode->inodeID * sizeof(struct finode);//节点位置计算
+	fseek(fd, ipos, SEEK_SET);
+	fwrite(&anode->finode, sizeof(struct finode), 1, fd);
+	fflush(fd);//去除无用信息
+	
+	//初始化文件数据区，成组链接表首实现
+	unsigned int group[BLOCKNUM];
+	for (int i = 0; i < BLOCKNUM; i++)
+	{
+		group[i] = i + 912;
+	}
+	for (int i = 0; i < 363; i++)
+	{
+		for (int j = 0; j < BLOCKNUM; j++)
+		{
+			group[j] += BLOCKNUM;
+		}
+		fseek(fd, (BLOCKSTART + i * 20) * 1024, SEEK_SET);			//cout<<BLOCKSTART+i*20;
+		fwrite(group, sizeof(unsigned int), BLOCKNUM, fd);
+	}
+	fclose(fd);
 }
